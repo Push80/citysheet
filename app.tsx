@@ -2,7 +2,7 @@ import React from 'react';
 import DeckGL from '@deck.gl/react';
 import {createRoot} from 'react-dom/client';
 import {COORDINATE_SYSTEM, Deck, PickingInfo, OrbitView} from '@deck.gl/core';
-import {PathLayer, ArcLayer, TextLayer} from '@deck.gl/layers';
+import {PathLayer, ArcLayer, TextLayer, ColumnLayer} from '@deck.gl/layers';
 
 type Coordinate = [number, number];
 interface PathObject {
@@ -15,8 +15,10 @@ type GridLine = {
 };
 
 type Cell = {
-  coords: Coordinate;
+  coord: Coordinate;
   weight: number;
+  width: number;
+  height: number;
   value: string;
   font: string;
   font_size: number;
@@ -45,6 +47,7 @@ export default function App() {
   var row_layer = new PathLayer<GridLine>
   var col_layer = new PathLayer<GridLine>
   var cell_layer = new TextLayer<Cell>
+  var tower_layer = new ColumnLayer<Cell>
   // Read the JSON file and parse it
   fetch(filePath)
       .then(response => response.json())
@@ -56,6 +59,7 @@ export default function App() {
             row_layer = draw_lines(rows, "RowPaths");
             col_layer = draw_lines(cols, "ColPaths");
             cell_layer = draw_cells(cells)
+            tower_layer = draw_towers(cells)
 
             new Deck({
               initialViewState: {
@@ -68,7 +72,7 @@ export default function App() {
                 dragMode: 'pan' // Invert controls: regular drag pans, Ctrl+drag rotates
               },
               views: new OrbitView(),
-              layers: [row_layer, col_layer]
+              layers: [row_layer, col_layer, cell_layer, tower_layer]
             });
           }
       })
@@ -84,7 +88,6 @@ export default function App() {
       pickable: true,
       coordinateSystem: COORDINATE_SYSTEM.CARTESIAN
     });
-    console.log(path_layer)
     return path_layer;
   }
 
@@ -95,8 +98,9 @@ export default function App() {
 
       background: true,
       billboard: false,
-      getPosition: (d: Cell) => [d.coords[0], d.coords[1], d.weight * 100],
+      getPosition: (d: Cell) => [d.coord[0], d.coord[1], d.weight * 2 + 1],
       getText: (d: Cell) => d.value,
+      /*
       getBackgroundColor: (d: Cell) => {
         const hex = d.background_color;
         // convert to RGB
@@ -106,12 +110,34 @@ export default function App() {
         const hex = d.color;
         // convert to RGB
         return hex.match(/[0-9a-f]{2}/g).map(x => parseInt(x, 16));
-      },
-      sizeScale: 0.0001,
+      },*/
+      sizeScale: 0.25,
       sizeUnits: 'common',
+      getAlignmentBaseline: 'top',
+      getTextAnchor: 'start',
 
     })
     return text_layer;
+  }
+
+  function draw_towers(cells): ColumnLayer<Cell> {
+    const tower_layer = new ColumnLayer<Cell>({
+      id: "TowerLayer",
+      data: cells,
+      getElevation: (d: Cell) => d.weight * 2,
+      getPosition: (d: Cell) => [d.coord[0] + 7, d.coord[1] - 7],/*{
+        const center_x = d.coord[0] + (d.width / 2)
+        const center_y = d.coord[1] - (d.height / 2)
+        return [center_x, center_y]
+      },*/
+      getFillColor: d => d.weight === 0 ? [0, 0, 0, 0] : [48, 128, d.weight * 255, 255],
+
+      radius: 10,
+      diskResolution: 4, //4 sided towers
+      extruded: true,
+      angle: 45,
+    })
+    return tower_layer
   }
 }
 
