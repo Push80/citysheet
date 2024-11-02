@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import DeckGL from '@deck.gl/react';
 import {createRoot} from 'react-dom/client';
 import {COORDINATE_SYSTEM, Deck, PickingInfo, OrbitView} from '@deck.gl/core';
@@ -26,6 +26,19 @@ type Cell = {
   background_color: string;
 }
 
+type Connection = {
+  from: {
+      name: string;
+      weight: number;
+      coords: [number, number];
+  };
+  to: {
+      name: string;
+      weight: number;
+      coords: [number, number];
+  };
+}
+
 
 type BartSegment = {
   inbound: number;
@@ -40,28 +53,35 @@ type BartSegment = {
   };
 };
 
+var DECK
+var rows, cols, cells, row_layer, col_layer, cell_layer, tower_layer, arc_layer
+
 export default function App() {
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
   // Define the path to the JSON file
   const filePath = "/sheet_info.json"
   console.log(filePath)
-  var row_layer = new PathLayer<GridLine>
-  var col_layer = new PathLayer<GridLine>
-  var cell_layer = new TextLayer<Cell>
-  var tower_layer = new ColumnLayer<Cell>
+  row_layer = new PathLayer<GridLine>
+  col_layer = new PathLayer<GridLine>
+  cell_layer = new TextLayer<Cell>
+  tower_layer = new ColumnLayer<Cell>
+  arc_layer = new ArcLayer<Connection>
   // Read the JSON file and parse it
   fetch(filePath)
       .then(response => response.json())
       .then(data => {
-          const rows: PathObject[] = data.sheet?.rows;
-          const cols: PathObject[] = data.sheet?.cols;
-          const cells = data.sheet?.cells;
+          rows = data.sheet?.rows;
+          cols = data.sheet?.cols;
+          cells = data.sheet?.cells;
           if (Array.isArray(rows) && Array.isArray(cols)) {
             row_layer = draw_lines(rows, "RowPaths");
             col_layer = draw_lines(cols, "ColPaths");
             cell_layer = draw_cells(cells)
             tower_layer = draw_towers(cells)
+            arc_layer = draw_arcs(cells)
 
-            new Deck({
+            const layers = [row_layer, col_layer, cell_layer, tower_layer, arc_layer]
+            DECK = new Deck({
               initialViewState: {
                 target: [0, 0, 0],  // Center the view on (0,0) in Cartesian space
                 zoom: 0.2,
@@ -72,8 +92,9 @@ export default function App() {
                 dragMode: 'pan' // Invert controls: regular drag pans, Ctrl+drag rotates
               },
               views: new OrbitView(),
-              layers: [row_layer, col_layer, cell_layer, tower_layer]
+              layers: [row_layer, col_layer, cell_layer, tower_layer, arc_layer],
             });
+            
           }
       })
       .catch(error => console.error("Error fetching JSON:", error));
@@ -138,6 +159,73 @@ export default function App() {
       angle: 45,
     })
     return tower_layer
+  }
+  function draw_arcs(cells): ArcLayer<Connection> {
+    // Create a lookup dictionary for quick access by cell name
+    const cellLookup: Record<string, Cell> = {};
+    cells.forEach(cell => {
+        cellLookup[cell.name] = cell;
+    });
+
+    const connection_data: Connection[] = [];
+
+    // Iterate over each cell in the input data
+    cells.forEach(cell => {
+        const fromCell = cell;
+
+        // For each cell in the "uses" array, create a new Connection object
+        fromCell.uses.forEach(usedCellName => {
+            const toCell = cellLookup[usedCellName];
+            if (toCell) { // Only proceed if the target cell is found
+                const connection: Connection = {
+                    from: {
+                        name: fromCell.value,
+                        weight: fromCell.weight,
+                        coords: [fromCell.coord[0] + 5, fromCell.coord[1] - 5]
+                    },
+                    to: {
+                        name: toCell.value,
+                        weight: toCell.weight,
+                        coords: [toCell.coord[0] + 5, toCell.coord[1] - 5]
+                    }
+                };
+                connection_data.push(connection);
+            }
+        });
+    });
+    arc_layer = new ArcLayer<Connection>({
+      id: 'ArcLayer',
+      data: connection_data,
+      getSourcePosition: (d: Connection) => [d.from.coords[0], d.from.coords[1], d.from.weight * 2],
+      getTargetPosition: (d: Connection) => [d.to.coords[0], d.to.coords[1], d.to.weight * 2],
+      getSourceColor: (d: Connection) =>
+        [48, 128, d.from.weight * 255, 64], // 64 = 0.25 opacity, 255 = 1.0 opacity
+      getTargetColor: (d: Connection) =>
+        [48, 128, d.to.weight * 255, 64], // 64 = 0.25 opacity, 255 = 1.0 opacity
+      getWidth: 2,
+      pickable: true,
+      getHeight: 0.31415,
+      autoHighlight: true,
+      highlightColor: [0, 0, 128, 255],
+      /*
+      onHover: info => {
+        setHoveredId(info.object ? info.object.from.name : null)
+        row_layer = draw_lines(rows, "RowPaths");
+        col_layer = draw_lines(cols, "ColPaths");
+        cell_layer = draw_cells(cells)
+        tower_layer = draw_towers(cells)
+        arc_layer = draw_arcs(cells)
+
+        const layers = [row_layer, col_layer, cell_layer, tower_layer, arc_layer]
+
+        DECK.setProps({layers})
+      },
+      updateTriggers: {
+        getSourceColor: [hoveredId], // Only update when hoveredId changes
+        getTargetColor: [hoveredId]  // Only update when hoveredId changes
+      },*/
+    });
+    return arc_layer
   }
 }
 

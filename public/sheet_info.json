@@ -1205,7 +1205,9 @@
                     "C15",
                     "C16"
                 ],
-                "used_by": [],
+                "used_by": [
+                    "Q14"
+                ],
                 "weight": 13
             },
             {
@@ -2558,7 +2560,9 @@
                 "value": "682.0",
                 "uses": [],
                 "used_by": [
-                    "A1"
+                    "A1",
+                    "Q5",
+                    "Q14"
                 ],
                 "weight": 0
             },
@@ -3002,7 +3006,8 @@
                 "value": "1394.0",
                 "uses": [],
                 "used_by": [
-                    "A1"
+                    "A1",
+                    "Q5"
                 ],
                 "weight": 0
             },
@@ -3183,10 +3188,15 @@
                 ],
                 "height": 15,
                 "width": 202.5,
-                "value": "",
-                "uses": [],
-                "used_by": [],
-                "weight": 0
+                "value": "FORMULA PLACEHOLDER",
+                "uses": [
+                    "C4",
+                    "C5"
+                ],
+                "used_by": [
+                    "Q14"
+                ],
+                "weight": 2
             },
             {
                 "name": "R5",
@@ -7179,10 +7189,14 @@
                 ],
                 "height": 15,
                 "width": 202.5,
-                "value": "",
-                "uses": [],
+                "value": "FORMULA PLACEHOLDER",
+                "uses": [
+                    "Q5",
+                    "C4",
+                    "A1"
+                ],
                 "used_by": [],
-                "weight": 0
+                "weight": 18
             },
             {
                 "name": "R14",
