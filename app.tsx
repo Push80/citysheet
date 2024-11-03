@@ -54,17 +54,18 @@ type BartSegment = {
 };
 
 var DECK
-var rows, cols, cells, row_layer, col_layer, cell_layer, tower_layer, arc_layer
+var rows, cols, cells, row_layer, col_layer, text_layer, tower_layer, arc_layer
 const HIGHLIGHT_COLOR = [255, 0, 0, 255]
 
 export default function App() {
-  var hoveredId = ""
+  var hoveredId = [""]
+  var hoveredType = ""
   // Define the path to the JSON file
   const filePath = "/sheet_info.json"
   console.log(filePath)
   row_layer = new PathLayer<GridLine>
   col_layer = new PathLayer<GridLine>
-  cell_layer = new TextLayer<Cell>
+  text_layer = new TextLayer<Cell>
   tower_layer = new ColumnLayer<Cell>
   arc_layer = new ArcLayer<Connection>
   // Read the JSON file and parse it
@@ -77,11 +78,11 @@ export default function App() {
           if (Array.isArray(rows) && Array.isArray(cols)) {
             row_layer = draw_lines(rows, "RowPaths");
             col_layer = draw_lines(cols, "ColPaths");
-            cell_layer = draw_cells(cells)
-            tower_layer = draw_towers(cells)
-            arc_layer = draw_arcs(cells)
+            text_layer = draw_cells()
+            tower_layer = draw_towers()
+            arc_layer = draw_arcs()
 
-            const layers = [row_layer, col_layer, cell_layer, tower_layer, arc_layer]
+            const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer]
             DECK = new Deck({
               initialViewState: {
                 target: [0, 0, 0],  // Center the view on (0,0) in Cartesian space
@@ -93,7 +94,7 @@ export default function App() {
                 dragMode: 'pan' // Invert controls: regular drag pans, Ctrl+drag rotates
               },
               views: new OrbitView(),
-              layers: [row_layer, col_layer, cell_layer, tower_layer, arc_layer],
+              layers: [row_layer, col_layer, text_layer, tower_layer, arc_layer],
             });
             
           }
@@ -113,8 +114,8 @@ export default function App() {
     return path_layer;
   }
 
-  function draw_cells(cells): TextLayer<Cell> {
-    const text_layer = new TextLayer<Cell>({
+  function draw_cells(): TextLayer<Cell> {
+    text_layer = new TextLayer<Cell>({
       id: "CellLayer",
       data: cells,
 
@@ -143,8 +144,8 @@ export default function App() {
   }
 
 
-  function draw_towers(cells): ColumnLayer<Cell> {
-    const tower_layer = new ColumnLayer<Cell>({
+  function draw_towers(): ColumnLayer<Cell> {
+    tower_layer = new ColumnLayer<Cell>({
       id: "TowerLayer",
       data: cells,
       getElevation: (d: Cell) => d.weight * 10,
@@ -159,10 +160,28 @@ export default function App() {
       diskResolution: 4, //4 sided towers
       extruded: true,
       angle: 45,
+      
+      //handle hover logic so that columns have arcs feeding into them be highlighted
+      pickable: true,
+      onHover: info => {
+        hoveredId = (info.object ? [info.object.name] : [null]);
+        hoveredType = "tower"
+        row_layer = draw_lines(rows, "RowPaths");
+        col_layer = draw_lines(cols, "ColPaths");
+        text_layer = draw_cells()
+        tower_layer = draw_towers()
+        arc_layer = draw_arcs()
+
+        const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer]
+        DECK.setProps({layers})
+      },
+      updateTriggers: {
+        getFillColor: [hoveredId], // Only update when hoveredId changes
+      }
     })
     return tower_layer
   }
-  function draw_arcs(cells): ArcLayer<Connection> {
+  function draw_arcs(): ArcLayer<Connection> {
     // Create a lookup dictionary for quick access by cell name
     const cellLookup: Record<string, Cell> = {};
     cells.forEach(cell => {
@@ -180,12 +199,12 @@ export default function App() {
             if (toCell) { // Only proceed if the target cell is found
                 const connection: Connection = {
                     from: {
-                        name: fromCell.value,
+                        name: fromCell.name,
                         weight: fromCell.weight,
                         coords: [fromCell.coord[0] + 5, fromCell.coord[1] - 5]
                     },
                     to: {
-                        name: toCell.value,
+                        name: usedCellName,
                         weight: toCell.weight,
                         coords: [toCell.coord[0] + 5, toCell.coord[1] - 5]
                     }
@@ -199,31 +218,56 @@ export default function App() {
       data: connection_data,
       getSourcePosition: (d: Connection) => [d.from.coords[0], d.from.coords[1], d.from.weight * 10],
       getTargetPosition: (d: Connection) => [d.to.coords[0], d.to.coords[1], d.to.weight * 10],
-      getSourceColor: (d: Connection) =>
-        [48, 128, Math.sqrt(d.from.weight * 10) * 15, (d.from.name === hoveredId ? 255 : 64)], // 64 = 0.25 opacity, 255 = 1.0 opacity
-      getTargetColor: (d: Connection) =>
-        [48, 128, Math.sqrt(d.to.weight * 10) * 15, (d.to.name === hoveredId ? 255 : 64)], // 64 = 0.25 opacity, 255 = 1.0 opacity
-      getWidth: 10,
+      getSourceColor: (d: Connection) => {
+        var opacity = 64 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        if (hoveredType == "arc") {
+          if (d.from.name === hoveredId[0] && d.to.name === hoveredId[1]) {
+            opacity = 255
+          }      
+        } else if (hoveredType == "tower") {
+          if (d.to.name === hoveredId[0]) {
+            opacity = 255
+          }
+        }
+        return [48, 128, Math.sqrt(d.from.weight * 10) * 15, opacity]
+      },
+      getTargetColor: (d: Connection) => {
+        var opacity = 64 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        if (hoveredType == "arc") {
+          if (d.from.name === hoveredId[0] && d.to.name === hoveredId[1]) {
+            opacity = 255
+          }      
+        } else if (hoveredType == "tower") {
+          if (d.to.name === hoveredId[0]) {
+            opacity = 255
+          }
+        }
+        return [48, 128, Math.sqrt(d.to.weight * 10) * 15, opacity]
+      },
+      getWidth: 2,
       pickable: true,
       getHeight: 0.31415,
       //autoHighlight: true,
       //highlightColor: [0, 0, 128, 255],
       
       onHover: info => {
-        hoveredId = (info.object ? info.object.from.name : null)
+        hoveredId = (info.object ? [info.object.from.name, info.object.to.name] : [null]);
+        hoveredType = "arc"
+        console.log(hoveredId)
         row_layer = draw_lines(rows, "RowPaths");
         col_layer = draw_lines(cols, "ColPaths");
-        cell_layer = draw_cells(cells)
-        tower_layer = draw_towers(cells)
-        arc_layer = draw_arcs(cells)
+        text_layer = draw_cells()
+        tower_layer = draw_towers()
+        arc_layer = draw_arcs()
 
-        const layers = [row_layer, col_layer, cell_layer, tower_layer, arc_layer]
+        const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer]
         DECK.setProps({layers})
       },
       updateTriggers: {
         getSourceColor: [hoveredId], // Only update when hoveredId changes
         getTargetColor: [hoveredId]  // Only update when hoveredId changes
       },
+      
     });
     return arc_layer
   }
