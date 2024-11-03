@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import DeckGL from '@deck.gl/react';
 import {createRoot} from 'react-dom/client';
 import {COORDINATE_SYSTEM, Deck, PickingInfo, OrbitView} from '@deck.gl/core';
@@ -55,9 +55,10 @@ type BartSegment = {
 
 var DECK
 var rows, cols, cells, row_layer, col_layer, cell_layer, tower_layer, arc_layer
+const HIGHLIGHT_COLOR = [255, 0, 0, 255]
 
 export default function App() {
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
+  var hoveredId = ""
   // Define the path to the JSON file
   const filePath = "/sheet_info.json"
   console.log(filePath)
@@ -119,7 +120,7 @@ export default function App() {
 
       background: true,
       billboard: false,
-      getPosition: (d: Cell) => [d.coord[0], d.coord[1], d.weight * 2 + 1],
+      getPosition: (d: Cell) => [d.coord[0]+2, d.coord[1]-2, d.weight * 10 + 1],
       getText: (d: Cell) => d.value,
       /*
       getBackgroundColor: (d: Cell) => {
@@ -141,17 +142,18 @@ export default function App() {
     return text_layer;
   }
 
+
   function draw_towers(cells): ColumnLayer<Cell> {
     const tower_layer = new ColumnLayer<Cell>({
       id: "TowerLayer",
       data: cells,
-      getElevation: (d: Cell) => d.weight * 2,
+      getElevation: (d: Cell) => d.weight * 10,
       getPosition: (d: Cell) => [d.coord[0] + 7, d.coord[1] - 7],/*{
         const center_x = d.coord[0] + (d.width / 2)
         const center_y = d.coord[1] - (d.height / 2)
         return [center_x, center_y]
       },*/
-      getFillColor: d => d.weight === 0 ? [0, 0, 0, 0] : [48, 128, d.weight * 255, 255],
+      getFillColor: d => d.weight === 0 ? [0, 0, 0, 0] : [48, 128, Math.sqrt(d.weight * 10) * 15, 255],
 
       radius: 10,
       diskResolution: 4, //4 sided towers
@@ -168,13 +170,12 @@ export default function App() {
     });
 
     const connection_data: Connection[] = [];
-
     // Iterate over each cell in the input data
     cells.forEach(cell => {
         const fromCell = cell;
 
         // For each cell in the "uses" array, create a new Connection object
-        fromCell.uses.forEach(usedCellName => {
+        fromCell.used_by.forEach(usedCellName => {
             const toCell = cellLookup[usedCellName];
             if (toCell) { // Only proceed if the target cell is found
                 const connection: Connection = {
@@ -196,20 +197,20 @@ export default function App() {
     arc_layer = new ArcLayer<Connection>({
       id: 'ArcLayer',
       data: connection_data,
-      getSourcePosition: (d: Connection) => [d.from.coords[0], d.from.coords[1], d.from.weight * 2],
-      getTargetPosition: (d: Connection) => [d.to.coords[0], d.to.coords[1], d.to.weight * 2],
+      getSourcePosition: (d: Connection) => [d.from.coords[0], d.from.coords[1], d.from.weight * 10],
+      getTargetPosition: (d: Connection) => [d.to.coords[0], d.to.coords[1], d.to.weight * 10],
       getSourceColor: (d: Connection) =>
-        [48, 128, d.from.weight * 255, 64], // 64 = 0.25 opacity, 255 = 1.0 opacity
+        [48, 128, Math.sqrt(d.from.weight * 10) * 15, (d.from.name === hoveredId ? 255 : 64)], // 64 = 0.25 opacity, 255 = 1.0 opacity
       getTargetColor: (d: Connection) =>
-        [48, 128, d.to.weight * 255, 64], // 64 = 0.25 opacity, 255 = 1.0 opacity
-      getWidth: 2,
+        [48, 128, Math.sqrt(d.to.weight * 10) * 15, (d.to.name === hoveredId ? 255 : 64)], // 64 = 0.25 opacity, 255 = 1.0 opacity
+      getWidth: 10,
       pickable: true,
       getHeight: 0.31415,
-      autoHighlight: true,
-      highlightColor: [0, 0, 128, 255],
-      /*
+      //autoHighlight: true,
+      //highlightColor: [0, 0, 128, 255],
+      
       onHover: info => {
-        setHoveredId(info.object ? info.object.from.name : null)
+        hoveredId = (info.object ? info.object.from.name : null)
         row_layer = draw_lines(rows, "RowPaths");
         col_layer = draw_lines(cols, "ColPaths");
         cell_layer = draw_cells(cells)
@@ -217,17 +218,18 @@ export default function App() {
         arc_layer = draw_arcs(cells)
 
         const layers = [row_layer, col_layer, cell_layer, tower_layer, arc_layer]
-
         DECK.setProps({layers})
       },
       updateTriggers: {
         getSourceColor: [hoveredId], // Only update when hoveredId changes
         getTargetColor: [hoveredId]  // Only update when hoveredId changes
-      },*/
+      },
     });
     return arc_layer
   }
 }
+
+
 
 
 
