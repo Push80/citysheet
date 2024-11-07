@@ -3,11 +3,15 @@ import DeckGL from '@deck.gl/react';
 import {createRoot} from 'react-dom/client';
 import {Color, COORDINATE_SYSTEM, Deck, PickingInfo, OrbitView} from '@deck.gl/core';
 import {PathLayer, ArcLayer, TextLayer, PolygonLayer} from '@deck.gl/layers';
+import {TripsLayer} from '@deck.gl/geo-layers';
+import { connect } from 'http2';
 
 var MAX_WIDTH, MAX_HEIGHT
 var START_ANIMATION = false
+let currentTime = 0
 
 type Coordinate = [number, number];
+type xyzCoordinate = [number, number, number]
 interface PathObject {
   path: Coordinate[];
 }
@@ -42,6 +46,11 @@ type Connection = {
   };
 }
 
+type Arc = {
+  path: xyzCoordinate[],
+  timestamps: number[]
+}
+
 
 type BartSegment = {
   inbound: number;
@@ -57,7 +66,9 @@ type BartSegment = {
 };
 
 var DECK
-var rows, cols, cells, row_layer, col_layer, text_layer, tower_layer, arc_layer
+var rows, cols, cells, row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer
+var connection_data: Connection[] = []
+
 const HIGHLIGHT_COLOR = [255, 0, 0, 255]
 export const colorRange: Color[] = [
   [1, 152, 189],
@@ -74,11 +85,6 @@ export default function App() {
   // Define the path to the JSON file
   const filepath = "/sheet_info.json"
   console.log(filepath)
-  row_layer = new PathLayer<GridLine>
-  col_layer = new PathLayer<GridLine>
-  text_layer = new TextLayer<Cell>
-  tower_layer = new PolygonLayer<Cell>
-  arc_layer = new ArcLayer<Connection>
   // Read the JSON file and parse it
   fetch(filepath)
       .then(response => response.json())
@@ -91,13 +97,14 @@ export default function App() {
           if (Array.isArray(rows) && Array.isArray(cols)) {
             row_layer = draw_lines(rows, "RowPaths");
             col_layer = draw_lines(cols, "ColPaths");
-            text_layer = draw_cells()
-            tower_layer = draw_towers()
-            arc_layer = draw_arcs()
+            draw_cells()
+            draw_towers()
+            draw_arcs()
+            draw_trips()
             DECK = new Deck({
               initialViewState: {
-                target: [200, -200, 0],  // Center the view on (0,0) in Cartesian space
-                zoom: 0,
+                target: [600, -200, 0],  // Center the view on (0,0) in Cartesian space
+                zoom: -1,
                 rotationX: 60,
                 rotationOrbit: 0,
               },
@@ -105,16 +112,31 @@ export default function App() {
                 dragMode: 'pan' // Invert controls: regular drag pans, Ctrl+drag rotates
               },
               views: new OrbitView(),
-              layers: [row_layer, col_layer, text_layer, tower_layer, arc_layer],
+              layers: [row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer],
             });
             setTimeout(() => {
               START_ANIMATION = true
-              tower_layer = draw_towers()
-              arc_layer = draw_arcs()
-              const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer]
-              DECK.setProps({layers})
-            }, 100);
+              update()
+            }, 1);
+            // Start the animation loop
+            setTimeout(() => {
+              animateTripsLayer();
+            }, 1700);
+            
 
+            function animateTripsLayer() {
+              const increment = 50; // Adjust increment speed as needed
+              const maxTime = 200; // Set max time to loop the animation (adjust based on your needs)
+
+              const intervalId = setInterval(() => {
+                currentTime++;
+                update()
+                // Optional: Stop after reaching a certain count
+                if (currentTime >= 1000) {
+                    clearInterval(intervalId);
+                }
+              }, 1);
+            }
             
           }
       })
@@ -172,7 +194,7 @@ export default function App() {
         return elevation
       },
       transitions: {
-        getElevation: 3000
+        getElevation: 1000
       },
       opacity: 0.25,
       getPolygon: (d: Cell) => {
@@ -198,11 +220,7 @@ export default function App() {
         hovered_id = (info.object ? [info.object.name] : [null]);
         hovered_type = "tower"
         if (hovered_id != old_hovered_id) {
-          tower_layer = draw_towers()
-          arc_layer = draw_arcs()
-
-          const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer]
-          DECK.setProps({layers})
+          update()
         }
       },
       updateTriggers: {
@@ -212,45 +230,14 @@ export default function App() {
     return tower_layer
   }
   function draw_arcs(): ArcLayer<Connection> {
-    // Create a lookup dictionary for quick access by cell name
-    const cell_lookup: Record<string, Cell> = {};
-    cells.forEach(cell => {
-        cell_lookup[cell.name] = cell;
-    });
+    //Finds every connection between towers to draw arcs
+    connection_data = getConnections()
 
-    const connection_data: Connection[] = [];
-    // Iterate over each cell in the input data
-    cells.forEach(cell => {
-        const from_cell = cell;
-
-        // For each cell in the "used_by" array, create a new Connection object
-        from_cell.used_by.forEach(to_cell_name => {
-            const to_cell = cell_lookup[to_cell_name];
-            if (to_cell) { // Only proceed if the target cell is found
-                const width =Math.abs(from_cell.coord[0] - to_cell.coord[0]);
-                const height =Math.abs(from_cell.coord[1] - to_cell.coord[1]);
-                MAX_WIDTH = (width > MAX_WIDTH) ? width : MAX_WIDTH;
-                MAX_HEIGHT = (height > MAX_HEIGHT) ? height : MAX_HEIGHT;
-                const connection: Connection = {
-                    from: {
-                        name: from_cell.name,
-                        weight: from_cell.weight,
-                        coords: [from_cell.coord[0] + from_cell.width / 2, from_cell.coord[1] - from_cell.height / 2]
-                    },
-                    to: {
-                        name: to_cell_name,
-                        weight: to_cell.weight,
-                        coords: [to_cell.coord[0] + to_cell.width / 2, to_cell.coord[1] - to_cell.height / 2]
-                    }
-                };
-                connection_data.push(connection);
-            }
-        });
-    });
     var connections_to_tower
     if (hovered_type == "tower") {
       connections_to_tower = findPathsToTarget(hovered_id[0])
     }
+    
     arc_layer = new ArcLayer<Connection>({
       id: 'ArcLayer',
       data: connection_data,
@@ -259,8 +246,8 @@ export default function App() {
       },
       getTargetPosition: (d: Connection) => [d.to.coords[0], d.to.coords[1], START_ANIMATION ? d.to.weight * 10 : 0],
       transitions: {
-        getSourcePosition: 3000,
-        getTargetPosition: 3000
+        getSourcePosition: 1000,
+        getTargetPosition: 1000
       },
       getSourceColor: (d: Connection) => {
         var opacity = 64 // 64 = 0.25 opacity, 255 = 1.0 opacity
@@ -291,13 +278,7 @@ export default function App() {
       getWidth: 5,
       pickable: true,
       getHeight: (d: Connection) => {
-        const dist = Math.sqrt(Math.pow(d.from.coords[0] - d.to.coords[0], 2) + (d.from.coords[1] - d.to.coords[1], 2));
-        const max_dist = Math.sqrt(Math.pow(MAX_WIDTH, 2) + Math.pow(MAX_HEIGHT, 2));
-        const normalized_dist =  1 - dist / max_dist;
-        const min = 0.4
-        const max = 3
-        var result = min + normalized_dist * (max - min)
-        return result
+        return getHeight(d);
       },
 
       onHover: info => {
@@ -306,11 +287,7 @@ export default function App() {
         hovered_type = "arc"
 
         if (hovered_id != old_hovered_id) {
-          tower_layer = draw_towers()
-          arc_layer = draw_arcs()
-
-          const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer]
-          DECK.setProps({layers})
+          update()
         }
       },
       updateTriggers: {
@@ -351,6 +328,132 @@ export default function App() {
       return findPaths(target);
     }
   }
+
+
+  function draw_trips(): void {
+    const arc_segment_data: Arc[] = []
+    connection_data.forEach(connection => {
+      const source_xyz: xyzCoordinate = [connection.from.coords[0], connection.from.coords[1], connection.from.weight * 10]
+      const target_xyz: xyzCoordinate = [connection.to.coords[0], connection.to.coords[1], connection.to.weight * 10]
+      const arc_seg = calculateArcSegments(source_xyz, target_xyz, 50, getHeight(connection))
+      const arc: Arc = {
+        path: arc_seg,
+        timestamps: Array.from({ length: arc_seg.length }, (_, i) => 0 + i * 1) //(i * timestamp=1)
+      }
+      arc_segment_data.push(arc);
+    });
+    trips_layer = new TripsLayer<Arc>({
+      id: 'TripsLayer',
+      data: arc_segment_data,
+      
+      getPath: (d: Arc) => d.path,
+      // Timestamp is stored as float32, do not return a long int as it will cause precision loss
+      getTimestamps: (d: Arc) => d.timestamps,
+      getColor: [253, 128, 93],
+      currentTime,
+      trailLength: 600000,
+      capRounded: true,
+      jointRounded: true,
+      billboard: true,
+      getWidth: 4,
+      widthScale: 1,
+      widthUnits: 'common',
+    });
+  }
+
+  function update(): void {
+    draw_towers()
+    draw_arcs()
+    draw_trips()
+    const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer]
+    DECK.setProps({layers})
+  }
+
+  function getConnections(): Connection[] {
+    // Create a lookup dictionary for quick access by cell name
+    const cell_lookup: Record<string, Cell> = {};
+    cells.forEach(cell => {
+        cell_lookup[cell.name] = cell;
+    });
+
+    // Iterate over each cell in the input data
+    const connections : Connection[] = []
+    cells.forEach(cell => {
+      const from_cell = cell;
+      // For each cell in the "used_by" array, create a new Connection object
+      from_cell.used_by.forEach(to_cell_name => {
+          const to_cell = cell_lookup[to_cell_name];
+          if (to_cell) { // Only proceed if the target cell is found
+              const width =Math.abs(from_cell.coord[0] - to_cell.coord[0]);
+              const height =Math.abs(from_cell.coord[1] - to_cell.coord[1]);
+              MAX_WIDTH = (width > MAX_WIDTH) ? width : MAX_WIDTH;
+              MAX_HEIGHT = (height > MAX_HEIGHT) ? height : MAX_HEIGHT;
+              const connection: Connection = {
+                  from: {
+                      name: from_cell.name,
+                      weight: from_cell.weight,
+                      coords: [from_cell.coord[0] + from_cell.width / 2, from_cell.coord[1] - from_cell.height / 2]
+                  },
+                  to: {
+                      name: to_cell_name,
+                      weight: to_cell.weight,
+                      coords: [to_cell.coord[0] + to_cell.width / 2, to_cell.coord[1] - to_cell.height / 2]
+                  }
+              };
+              connections.push(connection);
+          }
+      });
+    });
+    return connections
+  }
+
+  function getHeight(c: Connection): number {
+    const dist = Math.sqrt(Math.pow(c.from.coords[0] - c.to.coords[0], 2) + (c.from.coords[1] - c.to.coords[1], 2));
+    const max_dist = Math.sqrt(Math.pow(MAX_WIDTH, 2) + Math.pow(MAX_HEIGHT, 2));
+    const normalized_dist =  1 - dist / max_dist;
+    const min = 0.4
+    const max = 3
+    var height = min + normalized_dist * (max - min)
+    return height
+  };
+
+  function calculateArcSegments(source: xyzCoordinate, target: xyzCoordinate, num_segments: number = 50, height: number // Adjust to control arc curvature
+  ): xyzCoordinate[] {
+      const segments: xyzCoordinate[] = [];
+      for (let i = 0; i <= num_segments; i++) {
+          const t = i / num_segments;
+          const interpolated = interpolateArc(source, target, t, height);
+          segments.push(interpolated);
+      }
+      return segments;
+  };
+
+  function interpolateArc(source: xyzCoordinate, target: xyzCoordinate, t: number, height: number): xyzCoordinate {
+    const x = source[0] * (1 - t) + target[0] * t;
+    const y = source[1] * (1 - t) + target[1] * t;
+
+    // Sinusoidal interpolation for z (vertical curvature)
+    const dist = Math.sqrt(Math.pow(target[0] - source[0], 2) + Math.pow(target[1] - source[1], 2));
+    const z = paraboloid(dist, source[2], target[2], t, height)
+
+    return [x, y, z];
+
+    // Helper function to calculate the height (z) based on a parabolic curve.
+    function paraboloid(distance: number, sourceZ: number, targetZ: number, ratio: number, height: number): number {
+      const deltaZ = targetZ - sourceZ;
+      const dh = distance * height;
+      if (dh === 0.0) {
+          return sourceZ + deltaZ * ratio;
+      }
+      const unitZ = deltaZ / dh;
+      const p2 = unitZ * unitZ + 1.0;
+
+      const dir = deltaZ >= 0 ? 1 : -1;  // Handle direction of the curve.
+      const z0 = dir === 1 ? sourceZ : targetZ;
+      const r = dir === 1 ? ratio : 1.0 - ratio;
+      return Math.sqrt(r * (p2 - r)) * dh + z0;
+    }
+  };
 }
 
 
