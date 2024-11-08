@@ -51,20 +51,6 @@ type Arc = {
   timestamps: number[]
 }
 
-
-type BartSegment = {
-  inbound: number;
-  outbound: number;
-  from: {
-    name: string;
-    coordinate: [longitude: number, latitude: number];
-  };
-  to: {
-    name: string;
-    coordinate: [longitude: number, latitude: number];
-  };
-};
-
 var DECK
 var rows, cols, cells, row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer
 var connection_data: Connection[] = []
@@ -78,6 +64,34 @@ export const colorRange: Color[] = [
   [254, 173, 84],
   [209, 55, 78]
 ];
+
+// Create the information window element
+const infoWindow = document.createElement("div");
+infoWindow.id = "infoWindow";
+infoWindow.style.position = "fixed";
+infoWindow.style.top = "20px";
+infoWindow.style.right = "20px";
+infoWindow.style.padding = "15px";
+infoWindow.style.backgroundColor = "white";
+infoWindow.style.border = "1px solid black";
+infoWindow.style.display = "none";  // Hidden initially
+infoWindow.style.zIndex = "1000";
+document.body.appendChild(infoWindow);
+
+// Add a close button to the info window
+const closeButton = document.createElement("button");
+closeButton.innerText = "Close";
+closeButton.onclick = () => {
+  infoWindow.style.display = "none";
+};
+infoWindow.appendChild(closeButton);
+
+// Function to display the info window with the selected polygon's information
+function showInfoWindow(polygonData) {
+  infoWindow.style.display = "block";
+  infoWindow.innerHTML = `<strong>${polygonData.name}</strong><br>${polygonData.value}`;
+  infoWindow.appendChild(closeButton);  // Add close button to window content
+}
 
 export default function App() {
   var hovered_id = [""]
@@ -101,6 +115,9 @@ export default function App() {
             draw_towers()
             draw_arcs()
             draw_trips()
+
+            
+
             DECK = new Deck({
               initialViewState: {
                 target: [600, -200, 0],  // Center the view on (0,0) in Cartesian space
@@ -125,9 +142,6 @@ export default function App() {
             
 
             function animateTripsLayer() {
-              const increment = 50; // Adjust increment speed as needed
-              const maxTime = 200; // Set max time to loop the animation (adjust based on your needs)
-
               const intervalId = setInterval(() => {
                 currentTime++;
                 update()
@@ -209,6 +223,11 @@ export default function App() {
         const center_y = d.coord[1] - (d.height / 2)
         return [center_x, center_y]
       },*/
+      onClick: ({ object }) => {
+        if (object) {
+          showInfoWindow(object);  // Show info when polygon is clicked
+        }
+      },
       getFillColor: d => d.weight === 0 ? [0, 0, 0, 0] : [48, 128, Math.sqrt(d.weight * 10) * 15, 255],
 
       extruded: true,
@@ -455,6 +474,7 @@ export default function App() {
     }
   };
 }
+
 
 
 
