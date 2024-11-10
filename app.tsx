@@ -93,6 +93,25 @@ function showInfoWindow(polygonData) {
   infoWindow.appendChild(closeButton);  // Add close button to window content
 }
 
+function getTooltip({object}: PickingInfo) {
+  if (!object) {
+    return null;
+  }
+  if (object.name) {
+    const name = object.name;
+    const value = object.value;
+    return `\
+      Cell: ${name}
+      ${value}`;
+  } else if (object.to) {
+    return `\
+      Arc from ${object.from.name} to ${object.to.name}`;
+  }
+  
+
+  
+}
+
 export default function App() {
   var hovered_id = [""]
   var hovered_type = ""
@@ -130,6 +149,7 @@ export default function App() {
               },
               views: new OrbitView(),
               layers: [row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer],
+              getTooltip: getTooltip
             });
             setTimeout(() => {
               START_ANIMATION = true
@@ -146,8 +166,8 @@ export default function App() {
                 currentTime++;
                 update()
                 // Optional: Stop after reaching a certain count
-                if (currentTime >= 1000) {
-                    clearInterval(intervalId);
+                if (currentTime >= 170) {
+                    currentTime = 50
                 }
               }, 1);
             }
@@ -256,7 +276,6 @@ export default function App() {
     if (hovered_type == "tower") {
       connections_to_tower = findPathsToTarget(hovered_id[0])
     }
-    
     arc_layer = new ArcLayer<Connection>({
       id: 'ArcLayer',
       data: connection_data,
@@ -269,7 +288,7 @@ export default function App() {
         getTargetPosition: 1000
       },
       getSourceColor: (d: Connection) => {
-        var opacity = 64 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        var opacity = 10 // 64 = 0.25 opacity, 255 = 1.0 opacity
         if (hovered_type == "arc") {
           if (d.from.name === hovered_id[0] && d.to.name === hovered_id[1]) {
             opacity = 255
@@ -282,7 +301,7 @@ export default function App() {
         return [48, 128, Math.sqrt(d.from.weight * 10) * 15, opacity]
       },
       getTargetColor: (d: Connection) => {
-        var opacity = 64 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        var opacity = 10 // 64 = 0.25 opacity, 255 = 1.0 opacity
         if (hovered_type == "arc") {
           if (d.from.name === hovered_id[0] && d.to.name === hovered_id[1]) {
             opacity = 255
@@ -354,12 +373,16 @@ export default function App() {
     connection_data.forEach(connection => {
       const source_xyz: xyzCoordinate = [connection.from.coords[0], connection.from.coords[1], connection.from.weight * 10]
       const target_xyz: xyzCoordinate = [connection.to.coords[0], connection.to.coords[1], connection.to.weight * 10]
-      const arc_seg = calculateArcSegments(source_xyz, target_xyz, 50, getHeight(connection))
-      const arc: Arc = {
-        path: arc_seg,
-        timestamps: Array.from({ length: arc_seg.length }, (_, i) => 0 + i * 1) //(i * timestamp=1)
+      const arc_seg = calculateArcSegments(source_xyz, target_xyz, 200, getHeight(connection))
+      for (let j = 0; j <= arc_seg.length; j += arc_seg.length / 5) {
+        const arc: Arc = {
+          path: arc_seg,
+          timestamps: Array.from({ length: arc_seg.length }, (_, i) => j + i * 0.5) //(i * timestamp=1)
+        }
+        arc_segment_data.push(arc);
+
       }
-      arc_segment_data.push(arc);
+      
     });
     trips_layer = new TripsLayer<Arc>({
       id: 'TripsLayer',
@@ -368,9 +391,14 @@ export default function App() {
       getPath: (d: Arc) => d.path,
       // Timestamp is stored as float32, do not return a long int as it will cause precision loss
       getTimestamps: (d: Arc) => d.timestamps,
-      getColor: [253, 128, 93],
+      getColor: (d: Arc) => {
+        let source = d.path[0]
+        let target = d.path[50]
+        const dist = Math.sqrt(Math.pow(source[0] - target[0], 2) + (source[1] - target[1], 2));
+        return [48, 128, Math.sqrt(dist / 4) * 15, 255]
+      },
       currentTime,
-      trailLength: 600000,
+      trailLength: 5,
       capRounded: true,
       jointRounded: true,
       billboard: true,
@@ -436,7 +464,7 @@ export default function App() {
     return height
   };
 
-  function calculateArcSegments(source: xyzCoordinate, target: xyzCoordinate, num_segments: number = 50, height: number // Adjust to control arc curvature
+  function calculateArcSegments(source: xyzCoordinate, target: xyzCoordinate, num_segments: number = 200, height: number // Adjust to control arc curvature
   ): xyzCoordinate[] {
       const segments: xyzCoordinate[] = [];
       for (let i = 0; i <= num_segments; i++) {
@@ -453,23 +481,23 @@ export default function App() {
 
     // Sinusoidal interpolation for z (vertical curvature)
     const dist = Math.sqrt(Math.pow(target[0] - source[0], 2) + Math.pow(target[1] - source[1], 2));
-    const z = paraboloid(dist, source[2], target[2], t, height)
+    const z = paraboloid(dist, source[2], target[2], t, height) + 1
 
     return [x, y, z];
 
     // Helper function to calculate the height (z) based on a parabolic curve.
-    function paraboloid(distance: number, sourceZ: number, targetZ: number, ratio: number, height: number): number {
+    function paraboloid(distance: number, sourceZ: number, targetZ: number, theta: number, height: number): number {
       const deltaZ = targetZ - sourceZ;
       const dh = distance * height;
       if (dh === 0.0) {
-          return sourceZ + deltaZ * ratio;
+          return sourceZ + deltaZ * theta;
       }
       const unitZ = deltaZ / dh;
-      const p2 = unitZ * unitZ + 1.0;
+      const p2 = unitZ * unitZ + 1;
 
       const dir = deltaZ >= 0 ? 1 : -1;  // Handle direction of the curve.
       const z0 = dir === 1 ? sourceZ : targetZ;
-      const r = dir === 1 ? ratio : 1.0 - ratio;
+      const r = dir === 1 ? theta : 1.0 - theta;
       return Math.sqrt(r * (p2 - r)) * dh + z0;
     }
   };
