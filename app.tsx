@@ -116,7 +116,7 @@ export default function App() {
   var hovered_id = [""]
   var hovered_type = ""
   // Define the path to the JSON file
-  const filepath = "/sheet_info.json"
+  const filepath = "/multi_sheet_info.json"
   console.log(filepath)
   // Read the JSON file and parse it
   fetch(filepath)
@@ -124,9 +124,12 @@ export default function App() {
       .then(data => {
           MAX_WIDTH = 0
           MAX_HEIGHT = 0
-          rows = data.sheet?.rows;
-          cols = data.sheet?.cols;
-          cells = data.sheet?.cells;
+          rows = rows = data.flatMap((sheet: any) => Object.values(sheet)[0].rows || []);
+          cols = data.flatMap((sheet: any) => Object.values(sheet)[0].cols || []);
+          cells = data.flatMap((sheet: any) => Object.values(sheet)[0].cells || []);
+          console.log(Object.values(data))
+          console.log(rows)
+
           if (Array.isArray(rows) && Array.isArray(cols)) {
             row_layer = draw_lines(rows, "RowPaths");
             col_layer = draw_lines(cols, "ColPaths");
@@ -314,6 +317,7 @@ export default function App() {
         return [48, 128, Math.sqrt(d.to.weight * 10) * 15, opacity]
       },
       getWidth: 5,
+      widthUnits: "common",
       pickable: true,
       getHeight: (d: Connection) => {
         return getHeight(d);
