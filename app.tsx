@@ -29,21 +29,24 @@ type Cell = {
   value: string;
   font: string;
   font_size: number;
-  color: string;
-  background_color: string;
+  formula: string;
+  formula_type: number;
+  text_color: Color;
+  bg_color: Color;
 }
 
 const COLOR_RANGE: Color[] = [
-  [1, 152, 189],
-  [73, 227, 206],
-  [216, 254, 181],
-  [254, 237, 177],
-  [254, 173, 84],
-  [209, 55, 78]
+  [1, 152, 189], //blue
+  [73, 227, 206], //teal
+  [115, 254, 86], //green
+  [250, 225, 119], //yellow
+  [254, 173, 84], //orange
+  [209, 55, 78] //red
 ];
 var MAX_WEIGHT
 
 type Connection = {
+  color: Color,
   from: {
       name: string;
       weight: number;
@@ -57,6 +60,7 @@ type Connection = {
 }
 
 type Arc = {
+  color: Color,
   path: xyzCoordinate[],
   timestamps: number[]
 }
@@ -66,14 +70,6 @@ var rows, cols, cells, row_layer, col_layer, text_layer, cell_background_layer, 
 var connection_data: Connection[] = []
 
 const HIGHLIGHT_COLOR = [255, 0, 0, 255]
-export const colorRange = [
-  [1, 152, 189],
-  [73, 227, 206],
-  [216, 254, 181],
-  [254, 237, 177],
-  [254, 173, 84],
-  [209, 55, 78]
-];
 
 // Create the information window element
 const infoWindow = document.createElement("div");
@@ -239,6 +235,10 @@ export default function App() {
         getPolygon: 1000
       },
       stroked: false,
+      extruded: true,
+      getElevation: 0.5,
+      material: false,
+      filled: true,
       getPolygon: (d: Cell) => {
         var top_left, top_right, bottom_left, bottom_right
         const elevation = d.weight * 10
@@ -249,9 +249,7 @@ export default function App() {
         bottom_right = [d.coord[0] + d.width - buffer, d.coord[1] - d.height + buffer, elevation]
         return [top_left, top_right, bottom_right, bottom_left]
       },
-      getFillColor: (d: Cell) => {
-        return [255, 255, 255, 255]
-      },
+      getFillColor: (d: Cell) => d.bg_color,
     })
     return cell_background_layer
   }
@@ -330,7 +328,7 @@ export default function App() {
         getTargetPosition: 1000
       },
       getSourceColor: (d: Connection) => {
-        var opacity = 10 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        var opacity = 30 // 64 = 0.25 opacity, 255 = 1.0 opacity
         if (hovered_type == "arc") {
           if (d.from.name === hovered_id[0] && d.to.name === hovered_id[1]) {
             opacity = 255
@@ -340,10 +338,12 @@ export default function App() {
             opacity = 255
           }
         }
+        let color = d.color
+        return [color[0], color[1], color[2], opacity]
         return [48, 128, Math.sqrt(d.from.weight * 10) * 15, opacity]
       },
       getTargetColor: (d: Connection) => {
-        var opacity = 10 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        var opacity = 30 // 64 = 0.25 opacity, 255 = 1.0 opacity
         if (hovered_type == "arc") {
           if (d.from.name === hovered_id[0] && d.to.name === hovered_id[1]) {
             opacity = 255
@@ -353,6 +353,8 @@ export default function App() {
             opacity = 255
           }
         }
+        let color = d.color
+        return [color[0], color[1], color[2], opacity]
         return [48, 128, Math.sqrt(d.to.weight * 10) * 15, opacity]
       },
       getWidth: 5,
@@ -419,6 +421,7 @@ export default function App() {
       const arc_seg = calculateArcSegments(source_xyz, target_xyz, 200, getHeight(connection))
       for (let j = 0; j <= arc_seg.length; j += arc_seg.length / 5) {
         const arc: Arc = {
+          color: connection.color,
           path: arc_seg,
           timestamps: Array.from({ length: arc_seg.length }, (_, i) => j + i * 0.5) //(i * timestamp=1)
         }
@@ -438,6 +441,7 @@ export default function App() {
         let source = d.path[0]
         let target = d.path[50]
         const dist = Math.sqrt(Math.pow(source[0] - target[0], 2) + (source[1] - target[1], 2));
+        return d.color
         return [48, 128, Math.sqrt(dist / 4) * 15, 255]
       },
       currentTime,
@@ -479,7 +483,9 @@ export default function App() {
               const height =Math.abs(from_cell.coord[1] - to_cell.coord[1]);
               MAX_WIDTH = (width > MAX_WIDTH) ? width : MAX_WIDTH;
               MAX_HEIGHT = (height > MAX_HEIGHT) ? height : MAX_HEIGHT;
+
               const connection: Connection = {
+                  color: COLOR_RANGE[to_cell.formula_type % COLOR_RANGE.length],
                   from: {
                       name: from_cell.name,
                       weight: from_cell.weight,
