@@ -33,6 +33,16 @@ type Cell = {
   background_color: string;
 }
 
+const COLOR_RANGE: Color[] = [
+  [1, 152, 189],
+  [73, 227, 206],
+  [216, 254, 181],
+  [254, 237, 177],
+  [254, 173, 84],
+  [209, 55, 78]
+];
+var MAX_WEIGHT
+
 type Connection = {
   from: {
       name: string;
@@ -52,11 +62,11 @@ type Arc = {
 }
 
 var DECK
-var rows, cols, cells, row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer
+var rows, cols, cells, row_layer, col_layer, text_layer, cell_background_layer, tower_layer, arc_layer, trips_layer
 var connection_data: Connection[] = []
 
 const HIGHLIGHT_COLOR = [255, 0, 0, 255]
-export const colorRange: Color[] = [
+export const colorRange = [
   [1, 152, 189],
   [73, 227, 206],
   [216, 254, 181],
@@ -127,13 +137,13 @@ export default function App() {
           rows = rows = data.flatMap((sheet: any) => Object.values(sheet)[0].rows || []);
           cols = data.flatMap((sheet: any) => Object.values(sheet)[0].cols || []);
           cells = data.flatMap((sheet: any) => Object.values(sheet)[0].cells || []);
-          console.log(Object.values(data))
-          console.log(rows)
+          MAX_WEIGHT = Math.max(...cells.map(c => c.weight));
 
           if (Array.isArray(rows) && Array.isArray(cols)) {
             row_layer = draw_lines(rows, "RowPaths");
             col_layer = draw_lines(cols, "ColPaths");
             draw_cells()
+            draw_cell_backgrounds()
             draw_towers()
             draw_arcs()
             draw_trips()
@@ -142,16 +152,16 @@ export default function App() {
 
             DECK = new Deck({
               initialViewState: {
-                target: [600, -200, 0],  // Center the view on (0,0) in Cartesian space
-                zoom: -1,
-                rotationX: 60,
-                rotationOrbit: 0,
+                target: [2700, -4500, 0],  // Center the view on (0,0) in Cartesian space
+                zoom: -0.5,
+                rotationX: 45,
+                rotationOrbit: -45,
               },
               controller: {
                 dragMode: 'pan' // Invert controls: regular drag pans, Ctrl+drag rotates
               },
-              views: new OrbitView(),
-              layers: [row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer],
+              views: new OrbitView({ far: 100000, near: 0.001, orthographic: true}),
+              layers: [row_layer, col_layer, text_layer, cell_background_layer, tower_layer, arc_layer, trips_layer],
               getTooltip: getTooltip
             });
             setTimeout(() => {
@@ -197,9 +207,9 @@ export default function App() {
       id: "CellLayer",
       data: cells,
 
-      background: true,
+      //background: true,
       billboard: false,
-      getPosition: (d: Cell) => [d.coord[0]+2, d.coord[1]-2, d.weight * 10 + 1],
+      getPosition: (d: Cell) => [d.coord[0]+2, d.coord[1]-2, d.weight * 10 + 2],
       getText: (d: Cell) => d.value,
       /*
       getBackgroundColor: (d: Cell) => {
@@ -221,19 +231,44 @@ export default function App() {
     return text_layer;
   }
 
+  function draw_cell_backgrounds(): PolygonLayer<Cell> {
+    cell_background_layer = new PolygonLayer<Cell>({
+      id: "CellBackground",
+      data: cells,
+      transitions: {
+        getPolygon: 1000
+      },
+      stroked: false,
+      getPolygon: (d: Cell) => {
+        var top_left, top_right, bottom_left, bottom_right
+        const elevation = d.weight * 10
+        const buffer = 0.5
+        top_left = [d.coord[0] + buffer, d.coord[1] - buffer, elevation]
+        top_right = [d.coord[0] + d.width - buffer, d.coord[1] - buffer, elevation]
+        bottom_left = [d.coord[0] + buffer, d.coord[1] - d.height + buffer, elevation]
+        bottom_right = [d.coord[0] + d.width - buffer, d.coord[1] - d.height + buffer, elevation]
+        return [top_left, top_right, bottom_right, bottom_left]
+      },
+      getFillColor: (d: Cell) => {
+        return [255, 255, 255, 255]
+      },
+    })
+    return cell_background_layer
+  }
+
   function draw_towers(): PolygonLayer<Cell> {
     const cells_filtered = cells.filter(cell => cell.weight != 0)
     tower_layer = new PolygonLayer<Cell>({
       id: "TowerLayer",
       data: cells_filtered,
       getElevation: (d: Cell) => {
-        const elevation = START_ANIMATION ? d.weight * 10 : 0
+        const elevation = START_ANIMATION ? d.weight * 10 - 1: 0
         return elevation
       },
       transitions: {
         getElevation: 1000
       },
-      opacity: 0.25,
+      opacity: 0.2,
       getPolygon: (d: Cell) => {
         var top_left, top_right, bottom_left, bottom_right
         top_left = [d.coord[0], d.coord[1]]
@@ -251,7 +286,11 @@ export default function App() {
           showInfoWindow(object);  // Show info when polygon is clicked
         }
       },
-      getFillColor: d => d.weight === 0 ? [0, 0, 0, 0] : [48, 128, Math.sqrt(d.weight * 10) * 15, 255],
+      getFillColor: (d: Cell) => {
+        let color_bucket = Math.floor((COLOR_RANGE.length - 1) * d.weight / MAX_WEIGHT)
+        let color = COLOR_RANGE[color_bucket];
+        return d.weight === 0 ? color : color;
+      },
 
       extruded: true,
 
@@ -413,10 +452,11 @@ export default function App() {
   }
 
   function update(): void {
+    draw_cell_backgrounds()
     draw_towers()
     draw_arcs()
     draw_trips()
-    const layers = [row_layer, col_layer, text_layer, tower_layer, arc_layer, trips_layer]
+    const layers = [row_layer, col_layer, text_layer, cell_background_layer, tower_layer, arc_layer, trips_layer]
     DECK.setProps({layers})
   }
 
