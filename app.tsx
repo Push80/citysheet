@@ -133,7 +133,7 @@ export default function App() {
   var hovered_id = [""]
   var hovered_type = ""
   // Define the path to the JSON file
-  const filepath = "/ic.json"
+  const filepath = "./ic.json"
   console.log(filepath)
   // Read the JSON file and parse it
   fetch(filepath)
