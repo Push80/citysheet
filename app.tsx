@@ -23,7 +23,7 @@ type GridLine = {
 type Cell = {
   coord: Coordinate;
   name: string;
-  weight: number;
+  rank: number;
   width: number;
   height: number;
   value: string;
@@ -43,18 +43,18 @@ const COLOR_RANGE: Color[] = [
   [254, 173, 84], //orange
   [209, 55, 78] //red
 ];
-var MAX_WEIGHT
+var MAX_rank
 
 type Connection = {
   color: Color,
   from: {
       name: string;
-      weight: number;
+      rank: number;
       coords: [number, number];
   };
   to: {
       name: string;
-      weight: number;
+      rank: number;
       coords: [number, number];
   };
 }
@@ -99,6 +99,17 @@ function showInfoWindow(polygonData) {
   infoWindow.appendChild(closeButton);  // Add close button to window content
 }
 
+const fpsPanel = document.createElement("div");
+infoWindow.id = "fpsPanel";
+infoWindow.style.position = "fixed";
+infoWindow.style.top = "20px";
+infoWindow.style.right = "20px";
+infoWindow.style.padding = "15px";
+infoWindow.style.backgroundColor = "white";
+infoWindow.style.border = "1px solid black";
+infoWindow.style.zIndex = "1000";
+document.body.appendChild(fpsPanel);
+
 function getTooltip({object}: PickingInfo) {
   if (!object) {
     return null;
@@ -122,7 +133,7 @@ export default function App() {
   var hovered_id = [""]
   var hovered_type = ""
   // Define the path to the JSON file
-  const filepath = "/multi_sheet_info.json"
+  const filepath = "/ic.json"
   console.log(filepath)
   // Read the JSON file and parse it
   fetch(filepath)
@@ -133,7 +144,7 @@ export default function App() {
           rows = rows = data.flatMap((sheet: any) => Object.values(sheet)[0].rows || []);
           cols = data.flatMap((sheet: any) => Object.values(sheet)[0].cols || []);
           cells = data.flatMap((sheet: any) => Object.values(sheet)[0].cells || []);
-          MAX_WEIGHT = Math.max(...cells.map(c => c.weight));
+          MAX_rank = Math.max(...cells.map(c => c.rank));
 
           if (Array.isArray(rows) && Array.isArray(cols)) {
             row_layer = draw_lines(rows, "RowPaths");
@@ -148,15 +159,21 @@ export default function App() {
 
             DECK = new Deck({
               initialViewState: {
+                target: [0, 0, 0],  // Center the view on (0,0) in Cartesian space
+                zoom: -0.5,
+                rotationX: 45,
+                rotationOrbit: -45,
+              },/*
+              initialViewState: {
                 target: [2700, -4500, 0],  // Center the view on (0,0) in Cartesian space
                 zoom: -0.5,
                 rotationX: 45,
                 rotationOrbit: -45,
-              },
+              },*/
               controller: {
                 dragMode: 'pan' // Invert controls: regular drag pans, Ctrl+drag rotates
               },
-              views: new OrbitView({ far: 100000, near: 0.001, orthographic: true}),
+              views: new OrbitView({ far: 100000, near: 0.10, orthographic: false}),
               layers: [row_layer, col_layer, text_layer, cell_background_layer, tower_layer, arc_layer, trips_layer],
               getTooltip: getTooltip
             });
@@ -165,21 +182,30 @@ export default function App() {
               update()
             }, 1);
             // Start the animation loop
+            
             setTimeout(() => {
               animateTripsLayer();
             }, 1700);
+
+            function updateFps() {
+              let fps = Math.round(DECK.metrics.fps);
+              fpsPanel.textContent = `FPS: ${fps}`;
+              requestAnimationFrame(updateFps);
+            }
+            setInterval(updateFps, 10);
             
 
             function animateTripsLayer() {
               const intervalId = setInterval(() => {
                 currentTime++;
-                update()
+                //update()
                 // Optional: Stop after reaching a certain count
                 if (currentTime >= 170) {
                     currentTime = 50
                 }
-              }, 1);
+              }, 1000);
             }
+            
             
           }
       })
@@ -205,7 +231,7 @@ export default function App() {
 
       //background: true,
       billboard: false,
-      getPosition: (d: Cell) => [d.coord[0]+2, d.coord[1]-2, d.weight * 10 + 2],
+      getPosition: (d: Cell) => [d.coord[0]+2, d.coord[1]-2, (d.rank * 20)  + 2],
       getText: (d: Cell) => d.value,
       /*
       getBackgroundColor: (d: Cell) => {
@@ -241,7 +267,7 @@ export default function App() {
       filled: true,
       getPolygon: (d: Cell) => {
         var top_left, top_right, bottom_left, bottom_right
-        const elevation = d.weight * 10
+        const elevation = d.rank * 20
         const buffer = 0.5
         top_left = [d.coord[0] + buffer, d.coord[1] - buffer, elevation]
         top_right = [d.coord[0] + d.width - buffer, d.coord[1] - buffer, elevation]
@@ -255,12 +281,12 @@ export default function App() {
   }
 
   function draw_towers(): PolygonLayer<Cell> {
-    const cells_filtered = cells.filter(cell => cell.weight != 0)
+    const cells_filtered = cells.filter(cell => cell.rank != 0)
     tower_layer = new PolygonLayer<Cell>({
       id: "TowerLayer",
       data: cells_filtered,
       getElevation: (d: Cell) => {
-        const elevation = START_ANIMATION ? d.weight * 10 - 1: 0
+        const elevation = START_ANIMATION ? (d.rank * 20) - 1: 0
         return elevation
       },
       transitions: {
@@ -285,9 +311,9 @@ export default function App() {
         }
       },
       getFillColor: (d: Cell) => {
-        let color_bucket = Math.floor((COLOR_RANGE.length - 1) * d.weight / MAX_WEIGHT)
+        let color_bucket = Math.floor((COLOR_RANGE.length - 1) * d.rank / MAX_rank)
         let color = COLOR_RANGE[color_bucket];
-        return d.weight === 0 ? color : color;
+        return d.rank === 0 ? color : color;
       },
 
       extruded: true,
@@ -320,15 +346,15 @@ export default function App() {
       id: 'ArcLayer',
       data: connection_data,
       getSourcePosition: (d: Connection) => {
-        return [d.from.coords[0], d.from.coords[1], START_ANIMATION ? d.from.weight * 10 : 0]
+        return [d.from.coords[0], d.from.coords[1], START_ANIMATION ? d.from.rank * 20  : 0]
       },
-      getTargetPosition: (d: Connection) => [d.to.coords[0], d.to.coords[1], START_ANIMATION ? d.to.weight * 10 : 0],
+      getTargetPosition: (d: Connection) => [d.to.coords[0], d.to.coords[1], START_ANIMATION ? d.to.rank * 20  : 0],
       transitions: {
         getSourcePosition: 1000,
         getTargetPosition: 1000
       },
       getSourceColor: (d: Connection) => {
-        var opacity = 30 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        var opacity = 50 // 64 = 0.25 opacity, 255 = 1.0 opacity
         if (hovered_type == "arc") {
           if (d.from.name === hovered_id[0] && d.to.name === hovered_id[1]) {
             opacity = 255
@@ -340,10 +366,10 @@ export default function App() {
         }
         let color = d.color
         return [color[0], color[1], color[2], opacity]
-        return [48, 128, Math.sqrt(d.from.weight * 10) * 15, opacity]
+        return [48, 128, Math.sqrt(d.from.rank ) * 15, opacity]
       },
       getTargetColor: (d: Connection) => {
-        var opacity = 30 // 64 = 0.25 opacity, 255 = 1.0 opacity
+        var opacity = 50 // 64 = 0.25 opacity, 255 = 1.0 opacity
         if (hovered_type == "arc") {
           if (d.from.name === hovered_id[0] && d.to.name === hovered_id[1]) {
             opacity = 255
@@ -355,7 +381,7 @@ export default function App() {
         }
         let color = d.color
         return [color[0], color[1], color[2], opacity]
-        return [48, 128, Math.sqrt(d.to.weight * 10) * 15, opacity]
+        return [48, 128, Math.sqrt(d.to.rank ) * 15, opacity]
       },
       getWidth: 5,
       widthUnits: "common",
@@ -416,8 +442,8 @@ export default function App() {
   function draw_trips(): void {
     const arc_segment_data: Arc[] = []
     connection_data.forEach(connection => {
-      const source_xyz: xyzCoordinate = [connection.from.coords[0], connection.from.coords[1], connection.from.weight * 10]
-      const target_xyz: xyzCoordinate = [connection.to.coords[0], connection.to.coords[1], connection.to.weight * 10]
+      const source_xyz: xyzCoordinate = [connection.from.coords[0], connection.from.coords[1], connection.from.rank ]
+      const target_xyz: xyzCoordinate = [connection.to.coords[0], connection.to.coords[1], connection.to.rank ]
       const arc_seg = calculateArcSegments(source_xyz, target_xyz, 200, getHeight(connection))
       for (let j = 0; j <= arc_seg.length; j += arc_seg.length / 5) {
         const arc: Arc = {
@@ -430,6 +456,7 @@ export default function App() {
       }
       
     });
+    return;
     trips_layer = new TripsLayer<Arc>({
       id: 'TripsLayer',
       data: arc_segment_data,
@@ -460,7 +487,7 @@ export default function App() {
     draw_towers()
     draw_arcs()
     draw_trips()
-    const layers = [row_layer, col_layer, text_layer, cell_background_layer, tower_layer, arc_layer, trips_layer]
+    const layers = [row_layer, col_layer, text_layer, cell_background_layer, arc_layer, tower_layer, trips_layer]
     DECK.setProps({layers})
   }
 
@@ -488,12 +515,12 @@ export default function App() {
                   color: COLOR_RANGE[to_cell.formula_type % COLOR_RANGE.length],
                   from: {
                       name: from_cell.name,
-                      weight: from_cell.weight,
+                      rank: from_cell.rank,
                       coords: [from_cell.coord[0] + from_cell.width / 2, from_cell.coord[1] - from_cell.height / 2]
                   },
                   to: {
                       name: to_cell_name,
-                      weight: to_cell.weight,
+                      rank: to_cell.rank,
                       coords: [to_cell.coord[0] + to_cell.width / 2, to_cell.coord[1] - to_cell.height / 2]
                   }
               };

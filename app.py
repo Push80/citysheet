@@ -1,3 +1,5 @@
+# TO RUN: python3 app.py
+
 # to download sheet as xlsx: use link: https://docs.google.com/spreadsheets/d/<KEY>/export?format=xlsx&gid=<GID>
 # https://docs.google.com/spreadsheets/d/19UVHkup9MkuEqr_rVzx4sG6L1Hx3vr_g3O7HJrWXeu4/export?format=xlsx&gid=682182531
 from flask import Flask, request, render_template, send_from_directory
